@@ -44,26 +44,38 @@ class TestBot:
             welcome_text, reply_markup=self.get_topics_keyboard()
         )
 
-    async def send_answer_statistics(
+    async def send_test_results(
         self,
         context: ContextTypes.DEFAULT_TYPE,
         user_id: int,
         username: str,
-        question: str,
-        user_answer: str,
-        is_correct: bool,
         topic_title: str,
     ):
-        """Отправляет статистику ответа администратору"""
-        status = "✅ Правильно" if is_correct else "❌ Неправильно"
+        """Отправляет итоговую статистику теста администратору"""
+        state = self.user_states[user_id]
+
+        # Подготовка заголовка сообщения
+        total_questions = len(state["questions"])
+        correct_answers = state["correct_answers"]
+        score = (correct_answers / total_questions) * 100
+
         message = (
-            f"📊 Новый ответ\n\n"
+            f"📊 Результаты теста\n\n"
             f"👤 Пользователь: {username} (ID: {user_id})\n"
             f"📚 Тема: {topic_title}\n"
-            f"❓ Вопрос: {question}\n"
-            f"📝 Ответ: {user_answer}\n"
-            f"📌 Статус: {status}"
+            f"✨ Общий результат: {score:.1f}%\n"
+            f"📝 Правильных ответов: {correct_answers}/{total_questions}\n\n"
+            f"Детальные результаты:\n"
         )
+
+        # Добавление информации по каждому вопросу
+        for i, answer in enumerate(state["answers"], 1):
+            status = "✅" if answer["is_correct"] else "❌"
+            message += (
+                f"\n{i}. {status} Вопрос: {answer['question']}\n"
+                f"   Ответ: {answer['user_answer']}\n"
+            )
+
         try:
             await context.bot.send_message(chat_id=self.admin_id, text=message)
         except Exception as e:
@@ -122,6 +134,8 @@ class TestBot:
                 "questions": questions_data,
                 "current_question": 0,
                 "correct_answers": 0,
+                "topic_id": topic_id,
+                "answers": [],
             }
 
             # Показываем первый вопрос
@@ -149,14 +163,12 @@ class TestBot:
             user_answer = current_question["options"][answer_index]["text"]
             is_correct = current_question["options"][answer_index]["is_correct"]
 
-            await self.send_answer_statistics(
-                context,
-                user_id,
-                username,
-                current_question["text"],
-                user_answer,
-                is_correct,
-                topic_title,
+            state["answers"].append(
+                {
+                    "question": current_question["text"],
+                    "user_answer": user_answer,
+                    "is_correct": is_correct,
+                }
             )
 
             if is_correct:
@@ -165,6 +177,10 @@ class TestBot:
             # Переходим к следующему вопросу или показываем результаты
             state["current_question"] += 1
             if state["current_question"] >= len(state["questions"]):
+                topic = (
+                    self.db.query(Topic).filter(Topic.id == state["topic_id"]).first()
+                )
+                await self.send_test_results(context, user_id, username, topic.title)
                 await self.show_results(query.message, user_id)
             else:
                 await self.show_question(query.message, user_id)
