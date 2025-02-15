@@ -4,8 +4,8 @@ services:
   bot:
     build: .
     volumes:
-      - ./src:/app/src
-      - bot-data:/app/data
+      - ./src:/app-telegram/src
+      - bot-data:/app-telegram/data
     env_file:
       - .env
     restart: always
