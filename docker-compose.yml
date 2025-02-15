@@ -2,8 +2,13 @@ version: '3'
 
 services:
   bot:
-    build:
-    restart: always
-    volumes: -./test_bot.db:/app/test_bot.db
+    build: .
+    volumes:
+      - ./src:/app/src
+      - bot-data:/app/data
     env_file:
       - .env
+    restart: always
+
+volumes:
+  bot-data:
