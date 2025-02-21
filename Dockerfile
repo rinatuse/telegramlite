@@ -10,4 +10,6 @@ COPY . .
 
 CMD ["python", "src/test_bot.py"]
 
+EXPOSE 80
+
 
