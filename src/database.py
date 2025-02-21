@@ -42,7 +42,7 @@ class QuestionOption(Base):
 
 def init_db():
     engine = create_engine(
-        "sqlite:///data/test_bot.db", connect_args={"check_same_thread": False}
+        "sqlite:///test_bot.db", connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)()
