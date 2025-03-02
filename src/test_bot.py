@@ -71,10 +71,13 @@ class TestBot:
         # Добавление информации по каждому вопросу
         for i, answer in enumerate(state["answers"], 1):
             status = "✅" if answer["is_correct"] else "❌"
-            message += (
-                f"\n{i}. {status} Вопрос: {answer['question']}\n"
-                f"   Ответ: {answer['user_answer']}\n"
-            )
+            message += f"\n{i}. {status} Вопрос: {answer['question']}\n"
+
+            if answer["is_correct"]:
+                message += f"    Ответ: {answer['user_answer']}\n"
+            else:
+                message += f"   Ответ ученика: {answer['user_answer']}\n"
+                message += f"   ✳️ Правильный ответ: {answer['correct_answer']} ✳️\n"
 
         try:
             await context.bot.send_message(chat_id=self.admin_id, text=message)
@@ -163,11 +166,18 @@ class TestBot:
             user_answer = current_question["options"][answer_index]["text"]
             is_correct = current_question["options"][answer_index]["is_correct"]
 
+            correct_answer_text = ""
+            for option in current_question["options"]:
+                if option["is_correct"]:
+                    correct_answer_text = option["text"]
+                    break
+
             state["answers"].append(
                 {
                     "question": current_question["text"],
                     "user_answer": user_answer,
                     "is_correct": is_correct,
+                    "correct_answer": correct_answer_text,
                 }
             )
 
