@@ -81,6 +81,7 @@ class TestBot:
 
         try:
             await context.bot.send_message(chat_id=self.admin_id, text=message)
+            logger.info(f"Статистика отправлена администратору для пользователя {user_id}")
         except Exception as e:
             logger.error(f"Ошибка отправки статистики: {e}")
 
@@ -95,8 +96,11 @@ class TestBot:
         """Обработчик нажатий на кнопки"""
         query = update.callback_query
         await query.answer()
+        user_id = query.from_user.id
 
         if query.data == "new_test":
+            # Важный момент: мы не полагаемся на состояние пользователя 
+            # при выборе нового теста, просто показываем меню
             welcome_text = "Выберите тему теста:"
             await query.edit_message_text(
                 welcome_text, reply_markup=self.get_topics_keyboard()
@@ -106,7 +110,6 @@ class TestBot:
         if query.data.startswith("topic_"):
             # Начало теста по выбранной теме
             topic_id = int(query.data.replace("topic_", ""))
-            user_id = query.from_user.id
 
             # Получаем вопросы для темы
             questions = (
@@ -146,12 +149,17 @@ class TestBot:
 
         elif query.data.startswith("answer_"):
             # Обработка ответа на вопрос
-            user_id = query.from_user.id
             username = query.from_user.username or f"User{user_id}"
             answer_index = int(query.data.replace("answer_", ""))
 
             if user_id not in self.user_states:
-                await query.edit_message_text("Произошла ошибка. Начните тест заново.")
+                logger.error(f"Состояние пользователя {user_id} не найдено")
+                await query.edit_message_text(
+                    "Произошла ошибка. Начните тест заново.", 
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("Начать заново", callback_data="new_test")
+                    ]])
+                )
                 return
 
             state = self.user_states[user_id]
@@ -187,16 +195,33 @@ class TestBot:
             # Переходим к следующему вопросу или показываем результаты
             state["current_question"] += 1
             if state["current_question"] >= len(state["questions"]):
-                topic = (
-                    self.db.query(Topic).filter(Topic.id == state["topic_id"]).first()
-                )
-                await self.send_test_results(context, user_id, username, topic.title)
-                await self.show_results(query.message, user_id)
+                # Сохраним копию данных перед очисткой состояния
+                result_data = {
+                    "total_questions": len(state["questions"]),
+                    "correct_answers": state["correct_answers"],
+                    "topic_title": topic_title
+                }
+                
+                # Отправляем результаты администратору
+                await self.send_test_results(context, user_id, username, topic_title)
+                
+                # Показываем результаты пользователю и очищаем состояние
+                await self.show_results(query.message, user_id, result_data)
             else:
                 await self.show_question(query.message, user_id)
 
     async def show_question(self, message, user_id):
         """Показывает текущий вопрос теста"""
+        if user_id not in self.user_states:
+            logger.error(f"Состояние пользователя {user_id} не найдено при показе вопроса")
+            await message.edit_text(
+                "Произошла ошибка. Начните тест заново.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Начать заново", callback_data="new_test")
+                ]])
+            )
+            return
+            
         state = self.user_states[user_id]
         question = state["questions"][state["current_question"]]
 
@@ -220,17 +245,40 @@ class TestBot:
             f"{question['text']}"
         )
 
-        await message.edit_text(
-            question_text, reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        try:
+            await message.edit_text(
+                question_text, reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при показе вопроса: {e}")
+            await message.edit_text(
+                "Произошла ошибка при показе вопроса. Начните тест заново.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Начать заново", callback_data="new_test")
+                ]])
+            )
 
-    async def show_results(self, message, user_id):
+    async def show_results(self, message, user_id, result_data=None):
         """Показывает результаты теста"""
-        state = self.user_states[user_id]
-        total_questions = len(state["questions"])
-        correct_answers = state["correct_answers"]
+        if result_data is None:
+            if user_id not in self.user_states:
+                logger.error(f"Состояние пользователя {user_id} не найдено при показе результатов")
+                await message.edit_text(
+                    "Произошла ошибка. Начните тест заново.",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("Начать заново", callback_data="new_test")
+                    ]])
+                )
+                return
+                
+            state = self.user_states[user_id]
+            total_questions = len(state["questions"])
+            correct_answers = state["correct_answers"]
+        else:
+            total_questions = result_data["total_questions"]
+            correct_answers = result_data["correct_answers"]
+            
         score = (correct_answers / total_questions) * 100
-
         progress_bar = self.generate_progress_bar(correct_answers, total_questions)
 
         result_text = (
@@ -244,12 +292,24 @@ class TestBot:
             [InlineKeyboardButton("📝 Выбрать другой тест", callback_data="new_test")]
         ]
 
-        await message.edit_text(
-            result_text, reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        try:
+            await message.edit_text(
+                result_text, reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            logger.info(f"Результаты показаны пользователю {user_id}")
+        except Exception as e:
+            logger.error(f"Ошибка при показе результатов: {e}")
+            await message.edit_text(
+                "Произошла ошибка при показе результатов. Начните тест заново.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Начать заново", callback_data="new_test")
+                ]])
+            )
 
         # Очищаем состояние пользователя
-        del self.user_states[user_id]
+        if user_id in self.user_states:
+            del self.user_states[user_id]
+            logger.info(f"Состояние пользователя {user_id} очищено")
 
     def _init_demo_data(self):
         """Инициализация демонстрационных данных"""
