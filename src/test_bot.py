@@ -51,7 +51,7 @@ class TestBot:
         username: str,
         topic_title: str,
     ):
-        """Отправляет итоговую статистику теста администратору с учетом ограничений Telegram"""
+        """Отправляет итоговую статистику теста администратору"""
         state = self.user_states[user_id]
 
         # Подготовка заголовка сообщения
@@ -64,42 +64,26 @@ class TestBot:
             f"👤 Пользователь: {username} (ID: {user_id})\n"
             f"📚 Тема: {topic_title}\n"
             f"✨ Общий результат: {score:.1f}%\n"
-            f"📝 Правильных ответов: {correct_answers}/{total_questions}\n"
+            f"📝 Правильных ответов: {correct_answers}/{total_questions}\n\n"
+            f"Детальные результаты:\n"
         )
 
-        # Отправляем общие результаты
+        # Добавление информации по каждому вопросу
+        for i, answer in enumerate(state["answers"], 1):
+            status = "✅" if answer["is_correct"] else "❌"
+            message += f"\n{i}. {status} Вопрос: {answer['question']}\n"
+
+            if answer["is_correct"]:
+                message += f"    Ответ: {answer['user_answer']}\n"
+            else:
+                message += f"   Ответ ученика: {answer['user_answer']}\n"
+                message += f"   ✳️ Правильный ответ: {answer['correct_answer']} ✳️\n"
+
         try:
             await context.bot.send_message(chat_id=self.admin_id, text=message)
-            
-            # Отправляем информацию о неправильных ответах отдельным сообщением
-            # для уменьшения размера сообщения
-            if correct_answers < total_questions:
-                wrong_answers = [a for a in state["answers"] if not a["is_correct"]]
-                wrong_msg = "❌ Неправильные ответы:\n\n"
-                
-                for i, answer in enumerate(wrong_answers, 1):
-                    wrong_msg += f"{i}. Вопрос: {answer['question'][:50]}...\n"
-                    wrong_msg += f"   Ответ ученика: {answer['user_answer']}\n"
-                    wrong_msg += f"   ✳️ Правильный ответ: {answer['correct_answer']} ✳️\n\n"
-                    
-                    # Если сообщение становится слишком длинным, отправляем его и начинаем новое
-                    if len(wrong_msg) > 3000:
-                        await context.bot.send_message(chat_id=self.admin_id, text=wrong_msg)
-                        wrong_msg = "❌ Неправильные ответы (продолжение):\n\n"
-                
-                # Отправляем оставшуюся часть сообщения, если она есть
-                if wrong_msg != "❌ Неправильные ответы (продолжение):\n\n" and wrong_msg != "❌ Неправильные ответы:\n\n":
-                    await context.bot.send_message(chat_id=self.admin_id, text=wrong_msg)
-            
             logger.info(f"Статистика отправлена администратору для пользователя {user_id}")
         except Exception as e:
             logger.error(f"Ошибка отправки статистики: {e}")
-            # Пытаемся отправить более короткое сообщение в случае ошибки
-            try:
-                simple_msg = f"📊 Пользователь {username} ({user_id}) завершил тест по теме '{topic_title}' с результатом {score:.1f}% ({correct_answers}/{total_questions})"
-                await context.bot.send_message(chat_id=self.admin_id, text=simple_msg)
-            except Exception as e2:
-                logger.error(f"Ошибка отправки короткой статистики: {e2}")
 
     @staticmethod
     def generate_progress_bar(current, total, length=10):
