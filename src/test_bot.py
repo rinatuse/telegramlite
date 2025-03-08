@@ -234,16 +234,24 @@ class TestBot:
             if topic:
                 state["topic_id"] = topic.id
 
-        keyboard = []
-        for i, option in enumerate(question["options"]):
-            keyboard.append(
-                [InlineKeyboardButton(option["text"], callback_data=f"answer_{i}")]
-            )
-
+        # Создаем текст вопроса с вариантами ответов
         question_text = (
             f"Вопрос {state['current_question'] + 1} из {len(state['questions'])}:\n\n"
-            f"{question['text']}"
+            f"{question['text']}\n\n"
+            f"Варианты ответов:\n"
         )
+        
+        # Добавляем варианты с буквами A, B, C, D
+        letters = ['A', 'B', 'C', 'D']
+        for i, option in enumerate(question["options"]):
+            question_text += f"{letters[i]}. {option['text']}\n"
+
+        # Создаем кнопки только с буквами
+        keyboard = []
+        for i in range(len(question["options"])):
+            keyboard.append(
+                [InlineKeyboardButton(letters[i], callback_data=f"answer_{i}")]
+            )
 
         try:
             await message.edit_text(
